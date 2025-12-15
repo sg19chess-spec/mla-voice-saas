@@ -1,0 +1,25 @@
+# ===========================================
+# MLA Voice Agent - Dependencies
+# ===========================================
+# Install with: pip install -r requirements.txt
+
+# ----- LiveKit Agent SDK -----
+livekit>=0.17.0               # LiveKit Python SDK
+livekit-agents>=0.12.0        # Agent framework
+livekit-plugins-openai>=0.10.0  # For Groq (OpenAI-compatible)
+
+# ----- AI Services -----
+groq>=0.4.0                   # Groq LLM (fast inference)
+httpx>=0.25.0                 # HTTP client for Sarvam API
+
+# ----- Database -----
+supabase>=2.0.0               # Supabase client
+python-dotenv>=1.0.0          # Load .env file
+
+# ----- Audio Processing -----
+numpy>=1.24.0                 # Audio array handling
+scipy>=1.11.0                 # Audio processing
+
+# ----- Utilities -----
+pydantic>=2.5.0               # Data validation
+python-dateutil>=2.8.2        # Date handling
