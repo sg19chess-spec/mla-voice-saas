@@ -1,0 +1,48 @@
+# ===========================================
+# MLA Voice AI - Git Ignore
+# ===========================================
+
+# ----- SECRETS (NEVER COMMIT THESE!) -----
+.env
+*.env
+.env.*
+!.env.example
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+pip-log.txt
+
+# ----- Node.js (for Next.js frontend) -----
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# ----- IDE -----
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ----- Logs -----
+*.log
+logs/
+
+# ----- Testing -----
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ----- Misc -----
+*.bak
+*.tmp
+.cache/

@@ -4,20 +4,20 @@
 # Install these with: pip install -r requirements.txt
 
 # ----- Web Framework -----
-fastapi==0.109.0          # The web framework (handles HTTP requests)
-uvicorn==0.27.0           # Server that runs FastAPI
-python-multipart==0.0.6   # Handles file uploads
+fastapi>=0.109.0          # The web framework (handles HTTP requests)
+uvicorn>=0.27.0           # Server that runs FastAPI
+python-multipart>=0.0.6   # Handles file uploads
 
 # ----- Database -----
-supabase==2.3.4           # Connects to Supabase database
-python-dotenv==1.0.0      # Loads .env file (your secrets)
+supabase>=2.0.0           # Connects to Supabase database
+python-dotenv>=1.0.0      # Loads .env file (your secrets)
 
 # ----- Validation -----
-pydantic==2.5.3           # Validates data (ensures correct format)
-pydantic-settings==2.1.0  # Settings management
+pydantic>=2.5.0           # Validates data (ensures correct format)
+pydantic-settings>=2.1.0  # Settings management
 
 # ----- HTTP Requests -----
-httpx==0.26.0             # Makes HTTP calls (for SMS, etc.)
+httpx>=0.25.0             # Makes HTTP calls (for SMS, etc.)
 
 # ----- Utilities -----
-python-dateutil==2.8.2    # Date/time handling
+python-dateutil>=2.8.2    # Date/time handling
