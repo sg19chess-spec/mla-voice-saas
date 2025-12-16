@@ -24,6 +24,55 @@ ROOM = None
 ROOM_NAME = None
 
 
+def get_gender_from_name(name: str) -> str:
+    """Detect gender from Indian/Tamil name. Returns 'male' or 'female'."""
+    name_lower = name.lower().strip()
+
+    # Common female name endings/patterns in Tamil/Indian names
+    female_patterns = [
+        'priya', 'lakshmi', 'devi', 'mala', 'valli', 'selvi', 'mari', 'ammal',
+        'amma', 'akka', 'sri', 'uma', 'geetha', 'seetha', 'radha', 'padma',
+        'kamala', 'vijaya', 'jaya', 'saroja', 'pushpa', 'meena', 'leela',
+        'shanti', 'rani', 'banu', 'begum', 'fatima', 'ayesha', 'nisha',
+        'anitha', 'sunitha', 'kavitha', 'lalitha', 'vanitha', 'sangeetha',
+        'deepa', 'ramya', 'divya', 'sowmya', 'pooja', 'sneha', 'swathi',
+        'keerthana', 'harini', 'varshini', 'nandhini', 'ranjani', 'bhavani'
+    ]
+
+    # Common male name endings/patterns
+    male_patterns = [
+        'kumar', 'raj', 'rajan', 'krishnan', 'nathan', 'muthu', 'vel',
+        'pandian', 'selvam', 'moorthy', 'swamy', 'lingam', 'kannan',
+        'mani', 'babu', 'reddy', 'naidu', 'pillai', 'khan', 'sheikh',
+        'ram', 'ganesh', 'suresh', 'ramesh', 'mahesh', 'dinesh', 'rajesh',
+        'prakash', 'venkatesh', 'srinivas', 'anand', 'arun', 'vijay',
+        'senthil', 'karthi', 'surya', 'ajith', 'vikram', 'gautham', 'karthik'
+    ]
+
+    # Check female patterns first
+    for pattern in female_patterns:
+        if pattern in name_lower or name_lower.endswith(pattern):
+            return 'female'
+
+    # Check male patterns
+    for pattern in male_patterns:
+        if pattern in name_lower or name_lower.endswith(pattern):
+            return 'male'
+
+    # Default heuristics for Tamil names
+    if name_lower.endswith(('a', 'i', 'ya')) and not name_lower.endswith(('anna', 'appa')):
+        return 'female'
+
+    # Default to male if uncertain
+    return 'male'
+
+
+def get_honorific(name: str) -> str:
+    """Get Tamil honorific based on detected gender."""
+    gender = get_gender_from_name(name)
+    return "மேடம்" if gender == 'female' else "சார்"
+
+
 @dataclass
 class CollectedName:
     name: str
@@ -77,20 +126,22 @@ RULES:
 class CollectIssueTask(AgentTask[CollectedIssue]):
     """Task to collect issue type and description only."""
 
-    def __init__(self, caller_name: str, chat_ctx=None) -> None:
+    def __init__(self, caller_name: str, honorific: str, chat_ctx=None) -> None:
         self._caller_name = caller_name
+        self._honorific = honorific
         super().__init__(
             instructions=f"""
 உங்கள் வேலை: பிரச்சினை வகை மட்டும் கேட்கவும்.
 
 Caller name: {caller_name}
+Honorific: {honorific}
 
 RULES:
 - Ask ONLY about the problem, nothing else
 - Wait for response
 - If unclear, ask for more details
 - Once you understand the issue, call got_issue function
-- Use the caller's name, no sir/madam
+- Address caller as "{caller_name} {honorific}"
 
 VALID ISSUES: சாலை, தண்ணீர், மின்சாரம், வடிகால், குப்பை, தெரு விளக்கு
             """,
@@ -100,7 +151,7 @@ VALID ISSUES: சாலை, தண்ணீர், மின்சாரம், 
     async def on_enter(self) -> None:
         """Ask for issue immediately."""
         await self.session.generate_reply(
-            instructions=f"Ask in Tamil: 'சரி {self._caller_name}, என்ன பிரச்சினை சொல்லுங்க?'"
+            instructions=f"Ask in Tamil: 'சரி {self._caller_name} {self._honorific}, என்ன பிரச்சினை சொல்லுங்க?'"
         )
 
     @function_tool()
@@ -173,12 +224,13 @@ Do NOT use sir/madam or any gender terms.
         # Step 2: Collect name
         logger.info("📝 Starting name collection...")
         name_result = await CollectNameTask(chat_ctx=self.chat_ctx)
-        caller_name = name_result.name if name_result else "சார்"
-        logger.info(f"📌 Name collected: {caller_name}")
+        caller_name = name_result.name if name_result else "நண்பரே"
+        honorific = get_honorific(caller_name)
+        logger.info(f"📌 Name collected: {caller_name}, Honorific: {honorific}")
 
         # Step 3: Collect issue
         logger.info("📝 Starting issue collection...")
-        issue_result = await CollectIssueTask(caller_name, chat_ctx=self.chat_ctx)
+        issue_result = await CollectIssueTask(caller_name, honorific, chat_ctx=self.chat_ctx)
         issue_type = issue_result.issue if issue_result else "other"
         description = issue_result.description if issue_result else ""
         logger.info(f"📌 Issue collected: {issue_type} - {description}")
@@ -273,7 +325,7 @@ Do NOT use sir/madam or any gender terms.
 
         # Step 7: Confirm and ask if anything else
         await self.session.generate_reply(
-            instructions=f"Thank caller in Tamil: 'நன்றி {caller_name}! உங்கள் புகார் பதிவு செய்யப்பட்டது. புகார் எண் {ref}. விரைவில் கவனிக்கப்படும். வேற ஏதாவது உதவி வேணுமா?'"
+            instructions=f"Thank caller in Tamil: 'நன்றி {caller_name} {honorific}! உங்கள் புகார் பதிவு செய்யப்பட்டது. புகார் எண் {ref}. விரைவில் கவனிக்கப்படும். வேற ஏதாவது உதவி வேணுமா?'"
         )
 
     @function_tool()
