@@ -52,10 +52,15 @@ RULES:
 - Wait for response
 - If unclear, ask again politely
 - Once you have the name, call got_name function
-
-Say: "உங்கள் பெயர் என்ன சார்/மேடம்?"
+- Do NOT use sir/madam - just ask neutrally
             """,
             chat_ctx=chat_ctx
+        )
+
+    async def on_enter(self) -> None:
+        """Ask for name immediately."""
+        await self.session.generate_reply(
+            instructions="Ask in Tamil: 'உங்கள் பெயர் என்ன?'"
         )
 
     @function_tool()
@@ -73,6 +78,7 @@ class CollectIssueTask(AgentTask[CollectedIssue]):
     """Task to collect issue type and description only."""
 
     def __init__(self, caller_name: str, chat_ctx=None) -> None:
+        self._caller_name = caller_name
         super().__init__(
             instructions=f"""
 உங்கள் வேலை: பிரச்சினை வகை மட்டும் கேட்கவும்.
@@ -84,12 +90,17 @@ RULES:
 - Wait for response
 - If unclear, ask for more details
 - Once you understand the issue, call got_issue function
+- Use the caller's name, no sir/madam
 
 VALID ISSUES: சாலை, தண்ணீர், மின்சாரம், வடிகால், குப்பை, தெரு விளக்கு
-
-Say: "சரி {caller_name} சார். என்ன பிரச்சினை சொல்லுங்க?"
             """,
             chat_ctx=chat_ctx
+        )
+
+    async def on_enter(self) -> None:
+        """Ask for issue immediately."""
+        await self.session.generate_reply(
+            instructions=f"Ask in Tamil: 'சரி {self._caller_name}, என்ன பிரச்சினை சொல்லுங்க?'"
         )
 
     @function_tool()
@@ -115,13 +126,16 @@ class CollectLocationTask(AgentTask[CollectedLocation]):
 RULES:
 - First ask for location/area
 - Then ask for ward number
-- If they don't know ward, say "பரவாயில்ல"
-- Once you have location, call got_location function
-
-Say: "புரிந்தது. இது எந்த பகுதி/தெருவில்?"
-After they answer: "வார்டு எண் தெரியுமா?"
+- If they don't know ward, say "பரவாயில்ல" and proceed
+- ONLY call got_location after getting BOTH location AND ward (or they said they don't know ward)
             """,
             chat_ctx=chat_ctx
+        )
+
+    async def on_enter(self) -> None:
+        """Ask for location immediately."""
+        await self.session.generate_reply(
+            instructions="Ask in Tamil: 'புரிந்தது. இது எந்த பகுதி அல்லது தெருவில்?'"
         )
 
     @function_tool()
@@ -140,8 +154,9 @@ class ComplaintAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions="""
-நீங்கள் ராசிபுரம் நகராட்சி அலுவலகத்தின் AI உதவியாளர். உங்கள் பெயர் அனுஷ்கா.
-Be friendly, speak Tamil, use சார்/மேடம்.
+நீங்கள் ராசிபுரம் நகராட்சி அலுவலகத்தின் AI உதவியாளர்.
+Be friendly, speak Tamil, use caller's name once known.
+Do NOT use sir/madam or any gender terms.
             """,
         )
         self._start_time = time.time()
@@ -152,7 +167,7 @@ Be friendly, speak Tamil, use சார்/மேடம்.
 
         # Step 1: Greet
         await self.session.generate_reply(
-            instructions="Greet in Tamil: 'வணக்கம்! இது ராசிபுரம் நகராட்சி அலுவலகம். நான் அனுஷ்கா. உங்களுக்கு எப்படி உதவ முடியும்?'"
+            instructions="Greet in Tamil: 'வணக்கம்! இது ராசிபுரம் நகராட்சி அலுவலகம். உங்களுக்கு எப்படி உதவ முடியும்?'"
         )
 
         # Step 2: Collect name
@@ -175,16 +190,27 @@ Be friendly, speak Tamil, use சார்/மேடம்.
         ward = location_result.ward if location_result else ""
         logger.info(f"📌 Location collected: {location}, Ward: {ward}")
 
-        # Step 5: Get caller phone from SIP participant
+        # Step 5: Get caller phone from room name or SIP participant
         caller_phone = "unknown"
         try:
             global ROOM, ROOM_NAME
+            import re
 
-            # Method 1: Get from SIP participant identity (format: sip_+916369675744)
-            if ROOM:
+            # Method 1: Extract from room name (most reliable)
+            # Room name format: call-_+916369675744_VeqLvMNp9z5R
+            if ROOM_NAME:
+                logger.info(f"📞 Room name: {ROOM_NAME}")
+                # Look for phone number pattern: +91 followed by 10 digits
+                match = re.search(r'\+91\d{10}', ROOM_NAME)
+                if match:
+                    caller_phone = match.group()
+                    logger.info(f"📞 Phone from room name: {caller_phone}")
+
+            # Method 2: If not found, try SIP participant identity
+            if caller_phone == "unknown" and ROOM:
                 for p in ROOM.remote_participants.values():
                     identity = p.identity or ""
-                    logger.info(f"📞 Checking participant: {identity}, kind: {p.kind}")
+                    logger.info(f"📞 Checking participant: {identity}")
 
                     # Check for sip_ prefix in identity
                     if identity.startswith("sip_"):
@@ -192,27 +218,6 @@ Be friendly, speak Tamil, use சார்/மேடம்.
                         caller_phone = identity[4:]  # Remove "sip_" prefix
                         logger.info(f"📞 Phone from SIP participant: {caller_phone}")
                         break
-
-                    # Also check if participant is SIP kind
-                    if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP and identity:
-                        caller_phone = identity.replace("sip_", "")
-                        logger.info(f"📞 Phone from SIP kind participant: {caller_phone}")
-                        break
-
-            # Method 2: If not found, extract from room name
-            if caller_phone == "unknown" and ROOM_NAME:
-                import re
-                # Look for phone number pattern in room name: call-_+916369675744_...
-                match = re.search(r'\+\d{10,15}', ROOM_NAME)
-                if match:
-                    caller_phone = match.group()
-                    logger.info(f"📞 Phone from room name: {caller_phone}")
-                else:
-                    # Try without + sign
-                    match = re.search(r'_(\d{10,15})_', ROOM_NAME)
-                    if match:
-                        caller_phone = match.group(1)
-                        logger.info(f"📞 Phone from room name (no +): {caller_phone}")
         except Exception as e:
             logger.error(f"❌ Failed to extract phone: {e}")
 
@@ -268,7 +273,7 @@ Be friendly, speak Tamil, use சார்/மேடம்.
 
         # Step 7: Confirm and ask if anything else
         await self.session.generate_reply(
-            instructions=f"Thank caller in Tamil: 'நன்றி {caller_name} சார்! உங்கள் புகார் பதிவு செய்யப்பட்டது. புகார் எண் {ref}. விரைவில் கவனிக்கப்படும். வேற ஏதாவது உதவி வேணுமா?'"
+            instructions=f"Thank caller in Tamil: 'நன்றி {caller_name}! உங்கள் புகார் பதிவு செய்யப்பட்டது. புகார் எண் {ref}. விரைவில் கவனிக்கப்படும். வேற ஏதாவது உதவி வேணுமா?'"
         )
 
     @function_tool()
