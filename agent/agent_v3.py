@@ -19,6 +19,10 @@ logger = logging.getLogger("agent")
 logger.setLevel(logging.INFO)
 load_dotenv(".env.local")
 
+# Global room reference (needed because self.session.room may not work)
+ROOM = None
+ROOM_NAME = None
+
 
 @dataclass
 class CollectedName:
@@ -171,31 +175,41 @@ Be friendly, speak Tamil, use சார்/மேடம்.
         ward = location_result.ward if location_result else ""
         logger.info(f"📌 Location collected: {location}, Ward: {ward}")
 
-        # Step 5: Get caller phone
+        # Step 5: Get caller phone from SIP participant
         caller_phone = "unknown"
         try:
-            # Method 1: Try to get from SIP participant identity
-            for p in self.session.room.remote_participants.values():
-                if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
+            global ROOM, ROOM_NAME
+
+            # Method 1: Get from SIP participant identity (format: sip_+916369675744)
+            if ROOM:
+                for p in ROOM.remote_participants.values():
                     identity = p.identity or ""
-                    if identity:
-                        # Remove "sip_" prefix if present
-                        caller_phone = identity.replace("sip_", "").replace("_", "")
-                        logger.info(f"📞 Phone from participant: {caller_phone}")
+                    logger.info(f"📞 Checking participant: {identity}, kind: {p.kind}")
+
+                    # Check for sip_ prefix in identity
+                    if identity.startswith("sip_"):
+                        # Extract phone: sip_+916369675744 -> +916369675744
+                        caller_phone = identity[4:]  # Remove "sip_" prefix
+                        logger.info(f"📞 Phone from SIP participant: {caller_phone}")
+                        break
+
+                    # Also check if participant is SIP kind
+                    if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP and identity:
+                        caller_phone = identity.replace("sip_", "")
+                        logger.info(f"📞 Phone from SIP kind participant: {caller_phone}")
                         break
 
             # Method 2: If not found, extract from room name
-            if caller_phone == "unknown":
+            if caller_phone == "unknown" and ROOM_NAME:
                 import re
-                room_name = self.session.room.name
                 # Look for phone number pattern in room name: call-_+916369675744_...
-                match = re.search(r'\+\d{10,15}', room_name)
+                match = re.search(r'\+\d{10,15}', ROOM_NAME)
                 if match:
                     caller_phone = match.group()
                     logger.info(f"📞 Phone from room name: {caller_phone}")
                 else:
                     # Try without + sign
-                    match = re.search(r'_(\d{10,15})_', room_name)
+                    match = re.search(r'_(\d{10,15})_', ROOM_NAME)
                     if match:
                         caller_phone = match.group(1)
                         logger.info(f"📞 Phone from room name (no +): {caller_phone}")
@@ -276,7 +290,10 @@ server.setup_fnc = prewarm
 
 @server.rtc_session(agent_name="gautham-agent")
 async def entrypoint(ctx: JobContext):
-    logger.info(f"🎙️ Agent joined room: {ctx.room.name}")
+    global ROOM, ROOM_NAME
+    ROOM = ctx.room
+    ROOM_NAME = ctx.room.name
+    logger.info(f"🎙️ Agent joined room: {ROOM_NAME}")
 
     session = AgentSession(
         stt=sarvam.STT(language="ta-IN", model="saarika:v2"),
