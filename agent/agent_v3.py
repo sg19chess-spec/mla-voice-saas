@@ -174,17 +174,57 @@ Be friendly, speak Tamil, use சார்/மேடம்.
         # Step 5: Get caller phone
         caller_phone = "unknown"
         try:
+            # Method 1: Try to get from SIP participant identity
             for p in self.session.room.remote_participants.values():
                 if p.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
                     identity = p.identity or ""
-                    caller_phone = identity[4:] if identity.startswith("sip_") else identity
-                    break
-        except:
-            pass
+                    if identity:
+                        # Remove "sip_" prefix if present
+                        caller_phone = identity.replace("sip_", "").replace("_", "")
+                        logger.info(f"📞 Phone from participant: {caller_phone}")
+                        break
+
+            # Method 2: If not found, extract from room name
+            if caller_phone == "unknown":
+                import re
+                room_name = self.session.room.name
+                # Look for phone number pattern in room name: call-_+916369675744_...
+                match = re.search(r'\+\d{10,15}', room_name)
+                if match:
+                    caller_phone = match.group()
+                    logger.info(f"📞 Phone from room name: {caller_phone}")
+                else:
+                    # Try without + sign
+                    match = re.search(r'_(\d{10,15})_', room_name)
+                    if match:
+                        caller_phone = match.group(1)
+                        logger.info(f"📞 Phone from room name (no +): {caller_phone}")
+        except Exception as e:
+            logger.error(f"❌ Failed to extract phone: {e}")
 
         # Step 6: Save complaint
         duration = int(time.time() - self._start_time)
-        transcript = f"Name: {caller_name}\nIssue: {issue_type}\nProblem: {description}\nLocation: {location}\nWard: {ward}"
+
+        # Build structured summary
+        summary = f"Name: {caller_name}\nIssue: {issue_type}\nProblem: {description}\nLocation: {location}\nWard: {ward}"
+
+        # Build full conversation transcript
+        full_transcript = []
+        try:
+            for msg in self.chat_ctx.messages:
+                role = "Agent" if msg.role == "assistant" else "User"
+                content = msg.content
+                # Extract text from content if it's a list
+                if isinstance(content, list):
+                    text_parts = [item.text if hasattr(item, 'text') else str(item) for item in content]
+                    content = ' '.join(text_parts)
+                full_transcript.append(f"{role}: {content}")
+        except Exception as e:
+            logger.error(f"Error building transcript: {e}")
+            full_transcript = [f"Summary: {summary}"]
+
+        # Combine summary and full conversation
+        complete_transcript = f"=== SUMMARY ===\n{summary}\n\n=== FULL CONVERSATION ===\n" + "\n".join(full_transcript)
 
         logger.info("=" * 60)
         logger.info("💾 SAVING COMPLAINT WITH DATA:")
@@ -195,6 +235,7 @@ Be friendly, speak Tamil, use சார்/மேடம்.
         logger.info(f"   Location: {location}")
         logger.info(f"   Ward: {ward}")
         logger.info(f"   Duration: {duration}s")
+        logger.info(f"   Transcript lines: {len(full_transcript)}")
         logger.info("=" * 60)
 
         result = await save_complaint_to_db(
@@ -204,7 +245,7 @@ Be friendly, speak Tamil, use சார்/மேடம்.
             description=description,
             location=location,
             ward=ward,
-            transcript=transcript,
+            transcript=complete_transcript,
             call_duration_seconds=duration
         )
 
